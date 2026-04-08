@@ -1,76 +1,76 @@
-import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { parse } from 'csv-parse/sync';
+import { NextResponse } from "next/server";
+
+// 🔥 CORS Headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+// 🔥 Handle OPTIONS preflight request
+export async function OPTIONS(req: Request) {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
+function calculateBias(data: any[]) {
+  const groups: any = {};
+
+  data.forEach((row) => {
+    const g = row.gender;
+    if (!groups[g]) groups[g] = { total: 0, positive: 0 };
+
+    groups[g].total++;
+    if (row.selected === 1) groups[g].positive++;
+  });
+
+  const rates: any = {};
+  Object.keys(groups).forEach((g) => {
+    rates[g] = groups[g].positive / groups[g].total;
+  });
+
+  const values = Object.values(rates) as number[];
+  const bias = Math.max(...values) - Math.min(...values);
+
+  return {
+    biasScore: (bias * 10).toFixed(2),
+    groups: rates,
+  };
+}
+
+function mitigateBias(data: any[]) {
+  const males = data.filter((d) => d.gender === "male");
+  const females = data.filter((d) => d.gender === "female");
+
+  const min = Math.min(males.length, females.length);
+
+  return [
+    ...males.slice(0, min),
+    ...females.slice(0, min),
+  ];
+}
 
 export async function POST(req: Request) {
-    try {
-        const formData = await req.formData();
-        const file = formData.get('file') as File | null;
-        const previousScore = Number(formData.get('score'));
+  try {
+    const { data } = await req.json();
 
-        if (!file) {
-            return NextResponse.json({ error: "File required" }, { status: 400 });
-        }
+    const before = calculateBias(data);
+    const fixedData = mitigateBias(data);
+    const after = calculateBias(fixedData);
 
-        const buffer = await file.arrayBuffer();
-        const content = Buffer.from(buffer).toString('utf-8');
+    return NextResponse.json(
+      {
+        status: "success",
+        before,
+        after,
+        fixedData,
+      },
+      { headers: corsHeaders }  // 🔥 ADDED CORS HEADERS
+    );
 
-        const records = parse(content, { columns: true, skip_empty_lines: true });
-
-        // 🧠 SIMPLE FIX LOGIC (REAL ENOUGH)
-        const fixedData = records.sort(() => Math.random() - 0.5);
-
-        // ⚡ Simulated improved score
-        const improvedScore = Math.max(1.5, previousScore - 4);
-
-        const apiKey = process.env.GEMINI_API_KEY;
-
-        let aiResponse = {
-            improvements: ["Dataset rebalanced", "Bias reduced"],
-            report: "Bias has been significantly reduced after mitigation."
-        };
-
-        if (apiKey) {
-            const genAI = new GoogleGenerativeAI(apiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-            const prompt = `
-You are an AI fairness engineer.
-
-Original bias score: ${previousScore}
-New bias score: ${improvedScore}
-
-Explain:
-1. What improvements were made
-2. How bias was reduced
-3. Final fairness outcome
-
-Return JSON:
-{
-  "improvements": [],
-  "report": ""
-}
-`;
-
-            const result = await model.generateContent(prompt);
-            const text = result.response.text();
-
-            try {
-                aiResponse = JSON.parse(text);
-            } catch {
-                aiResponse.report = text;
-            }
-        }
-
-        return NextResponse.json({
-            status: "success",
-            before_score: previousScore,
-            after_score: improvedScore,
-            improvements: aiResponse.improvements,
-            report: aiResponse.report
-        });
-
-    } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
-    }
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err.message },
+      { status: 500, headers: corsHeaders }  // 🔥 ADDED CORS HEADERS
+    );
+  }
 }

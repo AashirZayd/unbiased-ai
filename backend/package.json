@@ -3,23 +3,24 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "set NODE_OPTIONS=--openssl-legacy-provider && next dev",
     "build": "next build",
     "start": "next start"
   },
   "dependencies": {
     "@google/generative-ai": "^0.17.2",
+    "csv-parse": "^6.2.1",
     "firebase-admin": "^12.7.0",
     "nanoid": "^5.1.7",
-    "next": "latest",
+    "next": "14.2.5",
     "papaparse": "^5.5.3",
-    "react": "latest",
-    "react-dom": "latest",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "resend": "^6.10.0"
   },
   "devDependencies": {
-    "@types/node": "^25.5.2",
-    "@types/react": "19.2.14",
-    "typescript": "6.0.2"
+    "@types/node": "^20.12.7",
+    "@types/react": "^18.3.3",
+    "typescript": "^5.4.5"
   }
 }

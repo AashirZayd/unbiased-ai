@@ -1,110 +1,194 @@
-import { NextResponse } from 'next/server';
-import { db } from '../../../lib/firebaseAdmin';
-import { parse } from 'csv-parse/sync';
+import { NextResponse } from "next/server";
+import { db } from "../../../lib/firebaseAdmin";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
 
-async function callGemini(summary: string) {
-    const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                contents: [
-                    {
-                        parts: [
-                            {
-                                text: `
-You are an AI fairness auditor.
+// 🔥 CORS Headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*", // or "http://localhost:3001" for more security
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
 
-Analyze this dataset summary:
+// 🔥 Handle OPTIONS preflight request
+export async function OPTIONS(req: Request) {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
+// 🔥 SAFE AI CALL (NO CRASH GUARANTEE)
+async function callAI(summary: string) {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `
+Return ONLY valid JSON. No markdown.
+
+Analyze this dataset:
 
 ${summary}
-
-Return ONLY JSON:
-{
-  "score": number (0-10),
-  "groups": [],
-  "issues": [],
-  "report": "",
-  "recommendations": []
-}
-                                `,
-                            },
-                        ],
-                    },
-                ],
-            }),
-        }
+                  `,
+                },
+              ],
+            },
+          ],
+        }),
+      }
     );
 
     const data = await res.json();
 
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    let text =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
-    try {
-        return JSON.parse(text);
-    } catch {
-        return {
-            score: 7.5,
-            groups: ["Unknown"],
-            issues: ["Parsing failed"],
-            report: text,
-            recommendations: []
-        };
-    }
+    console.log("Gemini RAW:", text);
+
+    // 🔥 CLEAN MARKDOWN IF EXISTS
+    text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+
+    return JSON.parse(text);
+
+  } catch (err) {
+    console.error("Gemini failed:", err);
+
+    return {
+      score: 5,
+      issues: ["AI unavailable"],
+      report: "Fallback analysis (AI failed)",
+      recommendations: [],
+    };
+  }
 }
 
-export async function POST(req: Request) {
-    try {
-        const formData = await req.formData();
-        const file = formData.get('file') as File | null;
+// 🔥 BIAS CALCULATION
+function calculateBias(data: any[]) {
+  const groups: any = {};
 
-        if (!file) {
-            return NextResponse.json({ error: "File required" }, { status: 400 });
-        }
+  data.forEach((row) => {
+    const g = row.gender;
 
-        const buffer = await file.arrayBuffer();
-        const content = Buffer.from(buffer).toString('utf-8');
+    if (!g) return;
 
-        // Parse CSV
-        const records = parse(content, { columns: true, skip_empty_lines: true });
-
-        // Create dataset summary
-        const sample = records.slice(0, 10);
-        const columns = Object.keys(records[0] || {});
-        const summary = `
-Columns: ${columns.join(", ")}
-
-Sample Data:
-${JSON.stringify(sample, null, 2)}
-
-Total Rows: ${records.length}
-        `;
-
-        // 🔥 GEMINI CALL
-        const aiResult = await callGemini(summary);
-
-        const resultDoc = {
-            filename: file.name,
-            timestamp: new Date().toISOString(),
-            rows_analyzed: records.length,
-            ...aiResult
-        };
-
-        // Save to Firebase
-        const ref = await db.collection("analysis_results").add(resultDoc);
-
-        return NextResponse.json({
-            status: "success",
-            analysis_id: ref.id,
-            data: resultDoc
-        });
-
-    } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+    if (!groups[g]) {
+      groups[g] = { total: 0, positive: 0 };
     }
+
+    groups[g].total++;
+
+    if (row.selected === 1) {
+      groups[g].positive++;
+    }
+  });
+
+  const rates: any = {};
+
+  Object.keys(groups).forEach((g) => {
+    rates[g] =
+      groups[g].total > 0
+        ? groups[g].positive / groups[g].total
+        : 0;
+  });
+
+  const values = Object.values(rates) as number[];
+
+  const bias =
+    values.length > 1
+      ? Math.max(...values) - Math.min(...values)
+      : 0;
+
+  return {
+    biasScore: (bias * 10).toFixed(2),
+    groups: rates,
+  };
+}
+
+// 🚀 MAIN API
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    let data = body.data;
+
+    // 🔥 VALIDATION
+    if (!Array.isArray(data) || data.length === 0) {
+      return NextResponse.json(
+        { error: "Invalid or empty dataset" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // 🔥 CLEAN DATA
+    data = data.map((row: any) => ({
+      gender: String(row.gender || "").toLowerCase().trim(),
+      selected: Number(row.selected),
+    }));
+
+    data = data.filter(
+      (r: any) =>
+        r.gender &&
+        (r.selected === 0 || r.selected === 1)
+    );
+
+    if (data.length === 0) {
+      return NextResponse.json(
+        { error: "No valid rows after cleaning" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // 🔥 BIAS CALCULATION
+    const result = calculateBias(data);
+
+    // 🔥 GEMINI (SAFE)
+    let ai;
+    try {
+      ai = await callAI(JSON.stringify(result));
+    } catch (err) {
+      console.error("AI failed:", err);
+
+      ai = {
+        report: "AI temporarily unavailable",
+        issues: [],
+        recommendations: [],
+      };
+    }
+
+    const doc = {
+      timestamp: new Date().toISOString(),
+      rows_analyzed: data.length,
+      ...result,
+      ...ai,
+    };
+
+    // 🔥 SAVE (OPTIONAL SAFE)
+    try {
+      await db.collection("analysis_results").add(doc);
+    } catch (err) {
+      console.error("Firebase failed:", err);
+    }
+
+    return NextResponse.json(
+      {
+        status: "success",
+        data: doc,
+      },
+      { headers: corsHeaders }
+    );
+
+  } catch (e: any) {
+    console.error("ANALYZE ERROR:", e);
+
+    return NextResponse.json(
+      { error: e.message || "Server error" },
+      { status: 500, headers: corsHeaders }
+    );
+  }
 }
