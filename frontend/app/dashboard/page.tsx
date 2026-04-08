@@ -11,6 +11,10 @@ export default function Dashboard() {
   const [afterScore, setAfterScore] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const [report, setReport] = useState("");
+  const [issues, setIssues] = useState<string[]>([]);
+  const [recommendations, setRecommendations] = useState<string[]>([]);
+
   const handleFileChange = (e: any) => {
     setFile(e.target.files[0]);
   };
@@ -28,7 +32,6 @@ export default function Dashboard() {
 
   const handleAnalyze = async () => {
     if (!file) return alert("Upload CSV");
-
     setLoading(true);
 
     Papa.parse(file, {
@@ -57,7 +60,11 @@ export default function Dashboard() {
           setAfterScore(null);
           setFixedData([]);
 
-        } catch (err) {
+          setReport(res.data.report || "");
+          setIssues(res.data.issues || []);
+          setRecommendations(res.data.recommendations || []);
+
+        } catch {
           alert("Analyze failed");
         }
 
@@ -89,62 +96,62 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#f5f7fb] p-8">
 
       {/* HEADER */}
-      <h1 className="text-2xl font-semibold mb-6">Unbiased AI</h1>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-xl font-semibold text-black">Unbiased AI</h1>
+        <div className="w-8 h-8 bg-linear-to-r from-purple-400 to-blue-500 rounded-full"></div>
+      </div>
 
-      {/* UPLOAD CARD */}
-      <div className="bg-white p-8 rounded-2xl shadow max-w-3xl mx-auto text-center">
-        <h2 className="text-lg font-semibold mb-2">
+      {/* UPLOAD */}
+      <div className="bg-white p-10 rounded-2xl shadow max-w-3xl mx-auto text-center">
+        <h2 className="text-lg font-semibold text-black">
           Upload AI Model for Analysis
         </h2>
-        <p className="text-gray-500 text-sm mb-6">
-          Detect bias vulnerabilities in seconds
+        <p className="text-black text-sm mb-6">
+          Drop your dataset or click to browse
         </p>
 
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleFileChange}
-          className="mb-4"
-        />
+        <input type="file" accept=".csv" onChange={handleFileChange} />
 
-        <br />
-
-        <button
-          onClick={handleAnalyze}
-          className="bg-black text-white px-6 py-2 rounded-lg"
-        >
-          {loading ? "Analyzing..." : "Analyze"}
-        </button>
+        <div className="mt-4">
+          <button
+            onClick={handleAnalyze}
+            className="bg-black text-white px-6 py-2 rounded-lg"
+          >
+            {loading ? "Analyzing..." : "Analyze"}
+          </button>
+        </div>
       </div>
 
       {/* RESULTS */}
       {score !== null && (
-        <div className="mt-10 max-w-4xl mx-auto space-y-6">
+        <div className="mt-10 max-w-5xl mx-auto space-y-8">
 
-          {/* SCORE */}
-          <div className="bg-white p-6 rounded-xl shadow text-center">
-            <p className="text-gray-500">Bias Risk Score</p>
-            <h2 className="text-5xl font-bold text-red-500">{score}</h2>
-            <p className="text-red-500">High Risk</p>
-          </div>
+          {/* TOP CARDS */}
+          <div className="grid grid-cols-3 gap-6">
 
-          {/* COMPARISON */}
-          <div className="grid grid-cols-2 gap-6">
-
-            <div className="bg-red-100 p-6 rounded-xl text-center">
-              <p className="text-red-500 text-sm">Before Fix</p>
-              <h2 className="text-4xl font-bold text-red-600">{score}</h2>
-              <p className="text-red-500">High Risk</p>
+            {/* SCORE */}
+            <div className="bg-white p-6 rounded-xl shadow text-center">
+              <p className="text-gray-500 text-sm">Bias Risk Score</p>
+              <h2 className="text-4xl font-bold text-red-500">{score}</h2>
+              <span className="text-xs text-red-500">High Risk</span>
             </div>
 
-            <div className="bg-green-100 p-6 rounded-xl text-center">
-              <p className="text-green-600 text-sm">After Fix</p>
-              <h2 className="text-4xl font-bold text-green-600">
+            {/* BEFORE */}
+            <div className="bg-white p-6 rounded-xl shadow text-center">
+              <p className="text-gray-500 text-sm">Before Fix</p>
+              <h2 className="text-3xl font-bold text-red-500">{score}</h2>
+              <span className="text-xs text-red-500">High Risk</span>
+            </div>
+
+            {/* AFTER */}
+            <div className="bg-white p-6 rounded-xl shadow text-center">
+              <p className="text-gray-500 text-sm">After Fix</p>
+              <h2 className="text-3xl font-bold text-green-500">
                 {afterScore ?? "-"}
               </h2>
-              <p className="text-green-600">
+              <span className="text-xs text-green-500">
                 {afterScore ? "Low Risk" : ""}
-              </p>
+              </span>
             </div>
 
           </div>
@@ -152,30 +159,84 @@ export default function Dashboard() {
           {/* IMPROVEMENT */}
           {improvement && (
             <div className="text-center">
-              <span className="bg-green-200 text-green-800 px-4 py-1 rounded-full text-sm">
+              <span className="bg-green-100 text-green-700 px-4 py-1 rounded-full text-sm">
                 ↑ {improvement}% Improvement
               </span>
             </div>
           )}
 
-          {/* GROUP TAGS */}
+          {/* AFFECTED GROUPS */}
           <div className="bg-white p-6 rounded-xl shadow">
             <h3 className="font-semibold mb-3">Affected Groups</h3>
             <div className="flex gap-2 flex-wrap">
-              <span className="bg-red-200 text-red-700 px-3 py-1 rounded-full text-sm">Gender</span>
-              <span className="bg-orange-200 text-orange-700 px-3 py-1 rounded-full text-sm">Ethnicity</span>
-              <span className="bg-yellow-200 text-yellow-700 px-3 py-1 rounded-full text-sm">Age</span>
+              {Object.keys(data[0] || {}).map((g, i) => (
+                <span
+                  key={i}
+                  className="px-3 py-1 bg-red-100 text-red-600 rounded-full text-xs"
+                >
+                  {g}
+                </span>
+              ))}
             </div>
           </div>
 
-          {/* FIX BUTTON */}
-          <div className="text-center">
+          {/* AI REPORT */}
+          {report && (
+            <div className="bg-white p-6 rounded-xl shadow space-y-4">
+              <h3 className="font-semibold text-lg">
+                Bias Vulnerability Report
+              </h3>
+
+              <div>
+                <p className="text-sm text-gray-500">Description</p>
+                <p className="text-sm text-gray-700 mt-1">{report}</p>
+              </div>
+
+              {recommendations.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold text-blue-600">
+                    Recommendations
+                  </p>
+                  <ul className="text-sm mt-2 space-y-1">
+                    {recommendations.map((r, i) => (
+                      <li key={i}>✔ {r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ACTION */}
+          <div className="text-center space-y-4">
             <button
               onClick={handleFix}
               className="bg-blue-600 text-white px-8 py-3 rounded-xl"
             >
-              {loading ? "Fixing..." : "✨ Fix Bias"}
+              {loading ? "Fixing..." : "Fix Bias"}
             </button>
+
+            {fixedData.length > 0 && (
+              <button
+                onClick={() => {
+                  const csv = [
+                    "gender,selected",
+                    ...fixedData.map((d) => `${d.gender},${d.selected}`),
+                  ].join("\n");
+
+                  const blob = new Blob([csv]);
+                  const url = URL.createObjectURL(blob);
+
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "fixed_dataset.csv";
+                  a.click();
+                }}
+                className="block mx-auto bg-black text-white px-6 py-2 rounded-lg"
+              >
+                Download Fixed Dataset
+              </button>
+            )}
           </div>
 
         </div>
