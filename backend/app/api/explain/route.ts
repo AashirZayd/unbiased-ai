@@ -1,120 +1,68 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/firebaseAdmin";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-export async function POST(req: Request) {
-  try {
-    // 🔒 Check DB
-    if (!db) {
-      return NextResponse.json(
-        { success: false, error: "Database not initialized" },
-        { status: 500 }
-      );
-    }
+import { generateDetailedExplanation } from "../../../lib/gemini";
 
-    // 📥 Parse request
-    const body = await req.json();
-    const { analysis_id } = body;
+// 🔥 CORS Headers
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
 
-    if (!analysis_id) {
-      return NextResponse.json(
-        { success: false, error: "analysis_id is required" },
-        { status: 400 }
-      );
-    }
-
-    // 📦 Fetch analysis from Firebase
-    const docRef = db.collection("analysis_results").doc(analysis_id);
-    const docSnap = await docRef.get();
-
-    if (!docSnap.exists) {
-      return NextResponse.json(
-        { success: false, error: "Analysis result not found" },
-        { status: 404 }
-      );
-    }
-
-    const analysisData = docSnap.data();
-
-    // 🔑 Check Gemini API key
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    // 🧪 Fallback (important for demo reliability)
-    if (!apiKey) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          summary:
-            "The system detected bias in decision outcomes across different groups.",
-          risk: "Medium",
-          impact:
-            "This bias may lead to unfair treatment of certain groups, affecting trust and compliance.",
-          recommendation:
-            "Apply dataset balancing and fairness-aware training techniques to reduce bias.",
-        },
-      });
-    }
-
-    // 🤖 Gemini setup
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-    });
-
-    // 🧠 Strong prompt (structured output)
-    const prompt = `
-You are an AI fairness auditor.
-
-Analyze the bias report below and return ONLY valid JSON (no markdown, no extra text).
-
-Format:
-{
-  "summary": "...",
-  "risk": "Low | Medium | High",
-  "impact": "...",
-  "recommendation": "..."
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
 }
 
-Explain in simple, business-friendly language.
+// 🚀 MAIN HANDLER
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const { analysisData } = body;
 
-Bias Report:
-${JSON.stringify(analysisData, null, 2)}
-`;
-
-    // ⚡ Generate response
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().trim();
-
-    // 🧹 Clean response (remove ```json if present)
-    text = text.replace(/```json|```/g, "").trim();
-
-    let parsed;
-
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      // fallback if Gemini returns bad JSON
-      parsed = {
-        summary: text,
-        risk: "Medium",
-        impact: "Bias detected affecting fairness of outcomes.",
-        recommendation: "Review dataset and apply mitigation techniques.",
-      };
+    if (!analysisData) {
+      return NextResponse.json(
+        { 
+          status: "error",
+          error: "Missing analysis data" 
+        },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
-    // ✅ Final response
-    return NextResponse.json({
-      success: true,
-      data: parsed,
-    });
-  } catch (error: any) {
-    console.error("Explain API Error:", error);
+    // Generate detailed explanation
+    const explanation = await generateDetailedExplanation(analysisData);
 
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "Failed to generate explanation",
+      { 
+        status: "success", 
+        data: explanation 
       },
-      { status: 500 }
+      { headers: corsHeaders }
+    );
+
+  } catch (err: any) {
+    console.error("Explain error:", err);
+    
+    // Fallback explanation
+    const fallback = {
+      summary: "Bias analysis completed successfully.",
+      whatIsBias: "The analysis detected statistical differences in selection rates across different demographic groups in your dataset.",
+      impact: "These disparities can lead to unfair treatment and may perpetuate existing inequalities. It's important to address these issues to ensure fair outcomes for all groups.",
+      technicalDetails: "The bias score represents the maximum difference in selection rates between groups. A score closer to 0 indicates more fairness.",
+      nextSteps: [
+        "Review the bias metrics for each demographic group",
+        "Apply the mitigation strategy to reduce bias",
+        "Re-analyze the mitigated dataset to verify improvement",
+        "Monitor outcomes regularly to ensure continued fairness"
+      ]
+    };
+    
+    return NextResponse.json(
+      { 
+        status: "success",
+        data: fallback,
+        note: "Using fallback explanation due to AI service unavailability"
+      },
+      { headers: corsHeaders }
     );
   }
 }

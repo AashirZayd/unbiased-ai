@@ -182,7 +182,7 @@ export default function Landing() {
 
       {/* FOOTER */}
       <div className="text-center py-6 text-sm text-gray-500">
-        <p className="font-medium">Unbiased AI Decision</p>
+        <p className="font-medium">Unbiased AI by HackTillDawn</p>
         <p>Built for BuildWithAI - Innovation Hackathon 2026 | Making AI Fair and Trustworthy</p>
       </div>
 
